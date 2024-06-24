@@ -20,7 +20,6 @@ import requests
 from collections import defaultdict
 import torch
 from torch.nn.functional import grid_sample
-import tornado
 import sys
 import numpy as np
 import plotly.graph_objs as go

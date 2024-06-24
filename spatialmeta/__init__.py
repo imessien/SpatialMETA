@@ -13,6 +13,7 @@ if not within_flit():  # see function docstring on why this is there
     from . import plotting as pl
     from . import util as ut
     from . import data as data
+    from . import external as ext
 
 
     from anndata import AnnData, concat
@@ -39,5 +40,5 @@ if not within_flit():  # see function docstring on why this is there
 
     # has to be done at the end, after everything has been imported
     import sys
-    sys.modules.update({f'{__name__}.{m}': globals()[m] for m in ['model', 'tl', 'pp', 'pl', 'ut', 'data']})
+    sys.modules.update({f'{__name__}.{m}': globals()[m] for m in ['model', 'tl', 'pp', 'pl', 'ut', 'data', 'ext']})
     del sys
