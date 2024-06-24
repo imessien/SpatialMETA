@@ -3,7 +3,6 @@ from ._preprocess import (
     get_mz_reference,
     read_sm_imzml_as_anndata,
     spot_transform_by_manual,
-    align_by_rigid_icp,
     calculate_scale_factor,
     new_spot_sample,
     spot_align_byknn,
