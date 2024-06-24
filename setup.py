@@ -24,7 +24,6 @@ setuptools.setup(
     install_requires=[
         "sphinx_rtd_theme==1.2.0",
         "sphinx-hoverxref==1.3.0",
-        "labw_utils==1.0.3",
         "anndata==0.8.0",
         "scanpy==1.8.1",
         "pandas==1.4.2",
