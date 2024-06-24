@@ -16,7 +16,7 @@ einops==0.4.1
 biopython==1.79
 plotly==5.10.0
 torch==2.2.2
-pytorch3d==0.7.6
+# pytorch3d==0.7.6
 scipy==1.10.0
 pyimzml==1.5.3
 dash_bootstrap_components==1.5.0

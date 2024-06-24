@@ -58,11 +58,11 @@ setuptools.setup(
     extras_require=dict(
         gpu=[
             "torch==2.2.1+cu121",
-            "pytorch3d==0.7.6+pt2.2.1cu121"
+            # "pytorch3d==0.7.6+pt2.2.1cu121"
         ],
         cpu=[
             "torch==2.21",
-            "pytorch3d==0.7.6"
+            # "pytorch3d==0.7.6"
         ]
     ),
     dependency_links=[

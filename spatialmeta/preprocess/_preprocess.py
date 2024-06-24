@@ -1,7 +1,5 @@
 # Pytorch
-import pytorch3d
 import torch
-import pytorch3d.ops
 
 # Built-in
 import time
@@ -385,68 +383,6 @@ def spot_transform_by_manual(
             new_site_df.iloc[:, 1] + new_site_df.iloc[:, 1].abs().max()
         )
     adata.obsm[new_spatial_key_SM] = new_site_df.to_numpy()
-
-
-def align_by_rigid_icp(
-    adata_SM: AnnDataSM,
-    adata_ST: AnnDataST,
-    spatial_key_SM: str = "spatial",
-    spatial_key_ST: str = "spatial",
-    new_spatial_key_SM: str = "new2_spatial",
-    update_spatial: bool = True,
-    **kwargs
-):
-    """
-    Align the SM data to the ST data by rigid ICP.
-    :param adata_SM: AnnDataSM. The AnnData object with SM data.
-    :param adata_ST: AnnDataST. The AnnData object with ST data.
-    :param spatial_key_SM: str. The spatial key for SM data, default is "spatial".
-    :param spatial_key_ST: str. The spatial key for ST data, default is "spatial".
-    :param new_spatial_key_SM: str. The new spatial key for SM data, default is "new2_spatial".
-    :param update_spatial: bool. The update spatial flag, if True, update the spatial coordinates in the AnnData object, default is True.
-    :param **kwargs: dict. The keyword arguments for pytorch3d.ops.iterative_closest_point.
-    """
-    SM_site_df = pd.DataFrame(adata_SM.obsm[spatial_key_SM])
-    ST_site_df = pd.DataFrame(adata_ST.obsm[spatial_key_ST])
-    SM_site_df.columns = ["x_coord", "y_coord"]
-    ST_site_df.columns = ["x_coord", "y_coord"]
-    SM_tensors = torch.tensor(SM_site_df.values, dtype=torch.float32)
-    ST_tensors = torch.tensor(ST_site_df.values, dtype=torch.float32)
-    # Calculate the scaling factor
-    width_SM = SM_site_df.x_coord.max() - SM_site_df.x_coord.min()
-    height_SM = SM_site_df.y_coord.max() - SM_site_df.y_coord.min()
-    width_ST = ST_site_df.x_coord.max() - ST_site_df.x_coord.min()
-    height_ST = ST_site_df.y_coord.max() - ST_site_df.y_coord.min()
-    scaling_width = width_ST / width_SM
-    scaling_height = height_ST / height_SM
-    # Scale the SM coordinates
-    SM_tensor_scaled = SM_tensors.clone()
-    SM_tensor_scaled[:, 0] = SM_tensors[:, 0] * scaling_width
-    SM_tensor_scaled[:, 1] = SM_tensors[:, 1] * scaling_height
-    # Run ICP
-    icp_solution = pytorch3d.ops.iterative_closest_point(
-        SM_tensor_scaled.unsqueeze(0), ST_tensors.unsqueeze(0), **kwargs
-    )
-    print(
-        "A boolean flag denoting whether the algorithm converged successfull is "
-        + str(icp_solution.converged)
-    )
-    print("The rotation of similarity transformation" + str(icp_solution.RTs.R))
-    print("The translation of similarity transformation" + str(icp_solution.RTs.T))
-    print("The scale of similarity transformation" + str(icp_solution.RTs.s))
-    # Apply the transformation to the SM coordinates
-    # new_SM_coordinate = (
-    #    _new_x @ icp_solution.RTs.R
-    # ) * icp_solution.RTs.s + icp_solution.RTs.T
-    new_SM_coordinate = icp_solution.Xt
-    adata_SM.obs["new_x_coord"] = new_SM_coordinate.numpy()[0, :, 0]
-    adata_SM.obs["new_y_coord"] = new_SM_coordinate.numpy()[0, :, 1]
-    adata_SM.obsm[new_spatial_key_SM] = adata_SM.obs.loc[
-        :, ["new_x_coord", "new_y_coord"]
-    ].to_numpy()
-    # Update the spatial coordinates in the AnnData object
-    if update_spatial:
-        adata_SM.obsm["spatial"] = adata_SM.obsm[new_spatial_key_SM]
 
 
 def new_spot_sample(
