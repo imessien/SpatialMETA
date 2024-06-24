@@ -21,7 +21,7 @@ pretrained_weights/
 *.json
 *.pkl
 .vscode/
-docs/
+docs/build/
 figures/
 
 # Distribution / packaging
