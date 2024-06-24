@@ -13,8 +13,8 @@ scikit-learn==0.24.1
 einops==0.4.1 
 biopython==1.79
 plotly==5.10.0
-torch==2.2.1+cu121
-pytorch3d==0.7.6+pt2.2.1cu121
+torch==2.2.2
+pytorch3d==0.7.6
 scipy==1.10.0
 pyimzml==1.5.3
 dash_bootstrap_components==1.5.0
