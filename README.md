@@ -9,18 +9,19 @@ spatialMETA is a method for integrating spatial multi-omics data. SMOI aligns ST
 [Documentation](https://spatialmeta.readthedocs.io/en/latest/)
 
 ## Installation
-
+Recommended to use Python 3.9 environment.
 ### Installing via PyPI
-
-If you are using GPU, please install the GPU version of spatialmeta.
 ```shell
-pip3 install spatialmeta[gpu]
+pip3 install spatialmeta
+```
+### Installing from source
+```shell
+git clone git@github.com:WanluLiuLab/SpatialMETA.git
+cd spatialmeta
+pip3 install -r requirements.txt
+python3 setup.py install
 ```
 
-If you are using CPU, please install the CPU version of spatialmeta.
-```shell
-pip3 install spatialmeta[cpu]
-```
 ### Create a new environment
 
 ```shell
