@@ -8,18 +8,14 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setuptools.setup(
     name="spatialMETA",
     version=version,
-    url="https://https://github.com/RuonanTian/SpatialMETA",
-    home_page="https://https://github.com/RuonanTian/SpatialMETA",
-    download_url="https://https://github.com/RuonanTian/SpatialMETA",
+    url="https://github.com/RuonanTian/SpatialMETA",
     author="Ruonan Tian",
     author_email="ruonan.23@intl.zju.edu.cn",
     description="spatialMETA: a deep learning framework for spatial multiomics",
-    long_description="spatialMETA: a deep learning framework for spatial multiomics",
-    long_description_content_type='text/plain',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     packages=setuptools.find_packages(
-        exclude=[
-            "*docs*",
-        ]
+        exclude=["*docs*"]
     ),
     install_requires=[
         "sphinx_rtd_theme==1.2.0",
@@ -29,8 +25,8 @@ setuptools.setup(
         "pandas==1.4.2",
         "matplotlib==3.5.2",
         "seaborn==0.11.2",
-        "scikit-learn==0.24.1 ",
-        "einops==0.4.1 ",
+        "scikit-learn==0.24.1",
+        "einops==0.4.1",
         "biopython==1.79",
         "plotly==5.10.0",
         "scipy==1.10.0",
@@ -42,32 +38,31 @@ setuptools.setup(
         "leidenalg",
         "molmass",
         "svgpathtools==1.6.1",
-        "torchvision==0.17.2",
         "shapely==2.0.3",
         "numpy==1.21.6",
         "numba==0.57.1",
         "umap-learn==0.5.1",
         "adjusttext==1.1.1",
         "colour==0.1.5",
-        # "scikit-image==0.24.0",
         "kornia==0.7.2",
-        "torchgeometry==0.1.2",
         "elasticdeform",
         "tifffile",
     ],
-    extras_require=dict(
-        gpu=[
-            "torch==2.2.1+cu121",
-            # "pytorch3d==0.7.6+pt2.2.1cu121"
+    extras_require={
+        "gpu": [
+            "torch==2.2.2+cu121",
+            "torchvision==0.17.2+cu121",
+            "torchgeometry==0.1.2+cu121",
         ],
-        cpu=[
-            "torch==2.21",
-            # "pytorch3d==0.7.6"
+        "cpu": [
+            "torch==2.2.2",
+            "torchvision==0.17.2",
+            "torchgeometry==0.1.2",
         ]
-    ),
+    },
     dependency_links=[
-        'https://download.pytorch.org/whl/cu121',
-        'https://miropsota.github.io/torch_packages_builder',
+        "https://download.pytorch.org/whl/cu121",
+        "https://miropsota.github.io/torch_packages_builder",
     ],
     include_package_data=False,
 )
