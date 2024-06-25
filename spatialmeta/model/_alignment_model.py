@@ -999,7 +999,9 @@ class AlignmentVAE(nn.Module):
                             to adjust this value to allow velocity field to converge.
         :param sigmaM: float. Standard deviation of image matching term for Gaussian mixture modeling in cost function. 
         :param sigmaR: float. Standard deviation of regularization term for Gaussian mixture modeling in cost function.
-        :param align_st_feature: bool. Whether to align the ST feature with SM feature
+        :param align_st_feature: bool. Whether to align the ST feature with SM feature.
+        :param debug_path: float. The temporary file path that save intermediate results in alignment.
+        
         """
         if align_st_feature:
             return self._fit_alignment_with_st_feature_impl(
@@ -1013,7 +1015,8 @@ class AlignmentVAE(nn.Module):
                 diffeo_start=diffeo_start,
                 epV=epV,
                 sigmaM=sigmaM,
-                sigmaR=sigmaR
+                sigmaR=sigmaR,
+                debug_path = debug_path,
             )
         else:
             return self._fit_alignment_impl(
@@ -1027,7 +1030,8 @@ class AlignmentVAE(nn.Module):
                 diffeo_start=diffeo_start,
                 epV=epV,
                 sigmaM=sigmaM,
-                sigmaR=sigmaR
+                sigmaR=sigmaR,
+                debug_path = debug_path,
             )
 
     def _fit_alignment_impl(
