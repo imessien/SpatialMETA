@@ -12,12 +12,12 @@ spatialMETA is a method for integrating spatial multi-omics data. SMOI aligns ST
 
 ### Installing via PyPI
 
-If you are using GPU, please install the GPU version of scAtlasVAE.
+If you are using GPU, please install the GPU version of spatialmeta.
 ```shell
 pip3 install spatialmeta[gpu]
 ```
 
-If you are using CPU, please install the CPU version of scAtlasVAE.
+If you are using CPU, please install the CPU version of spatialmeta.
 ```shell
 pip3 install spatialmeta[cpu]
 ```
