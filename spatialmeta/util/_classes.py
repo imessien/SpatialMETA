@@ -2,6 +2,9 @@ import scanpy as sc
 from anndata import AnnData
 
 class AnnDataSM(AnnData):
+    """
+    Anndata object for Spatial Metabolomics data
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._spatialtk_type = 'AnnDataSM'
@@ -40,6 +43,9 @@ class AnnDataSM(AnnData):
             return self._gen_repr(self.n_obs, self.n_vars)
 
 class AnnDataST(AnnData):
+    """
+    Anndata object for Spatial Transcriptomics data
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._spatialtk_type = 'AnnDataST'
@@ -78,6 +84,9 @@ class AnnDataST(AnnData):
             return self._gen_repr(self.n_obs, self.n_vars)
         
 class AnnDataJointSMST(AnnData):
+    """
+    Anndata object for Joint Spatial Metabolomics and Transcriptomics data
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._spatialtk_type = 'AnnDataJointSTSM'

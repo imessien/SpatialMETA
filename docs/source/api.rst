@@ -1,6 +1,19 @@
 API
 ===
 
+.. autoclass:: spatialmeta.AnnDataST
+.. autoclass:: spatialmeta.AnnDataSM
+.. autoclass:: spatialmeta.AnnDataJointSMST
+
+
+Data
+----
+
+.. autofunction:: spatialmeta.data.list_datasets
+.. autofunction:: spatialmeta.data.load_adata
+.. autofunction:: spatialmeta.data.load_imzML_and_ibd
+.. autofunction:: spatialmeta.data.load_Vicari_2024_msi
+
 Preprocessing
 -------------
 
@@ -36,25 +49,27 @@ Model
 -----
 
 Alignment Model for ST and SM
-~~~~~~~~~~~~~~~~~~
-This class is designed to align spatial transcriptomics (ST) and spatial metabolomics (SM) data. Firstly the model will learn a separate latent space for ST and SM. Then, the model will learn a linear transformation to align the two coordinate system.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This class is designed to align spatial transcriptomics (ST) and spatial metabolomics (SM) data. Firstly the model will learn a separate latent space for ST and SM by two indendent variational autoencoders (VAE).
+Then, the model will learn (1) an Affine Matrix `A` to align the coordinate of ST and SM data, (2) (optional) a diffeomorphic transformation matrix `V` to align the spatial coordinate of ST and SM data, (3) (optional) a linear transformation matrix `W` to align the latent space of ST and SM data, and (4) (optional) a linear transformation matrix `V` to align the metabolite latent space to the histology image feature.
 
-.. autoclass:: spatialmeta.model.AlignmentVAE
-.. autofunction:: spatialmeta.model.AlignmentVAE.fit_vae
-.. autofunction:: spatialmeta.model.AlignmentVAE.fit_alignment
+.. autoclass:: spatialmeta.model.AlignmentModule
+.. autofunction:: spatialmeta.model.AlignmentModule.fit_vae
+.. autofunction:: spatialmeta.model.AlignmentModule.fit_alignment
 
 
 Integration Model for ST and SM
-~~~~~~~~~~~~~~~~~~
-This class is designed to handle spatial transcriptomics (ST) and spatial metabolomics (SM) data. The model learn a shared latent space to predict spatial sub-clusters characterized by unique transcriptional and metabolic states.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This class is designed to handle vertical and horizontal spatial transcriptomics (ST) and spatial metabolomics (SM) data. The model learn a shared latent space to predict spatial sub-clusters characterized by unique transcriptional and metabolic states.
 
-.. autofunction:: spatialmeta.model.ConditionalVAE
-.. autofunction:: spatialmeta.model.ConditionalVAE.fit
-.. autofunction:: spatialmeta.model.ConditionalVAE.get_latent_embedding
-.. autofunction:: spatialmeta.model.ConditionalVAE.get_normalized_expression
+.. autofunction:: spatialmeta.model.ConditionalVAESTSM
+.. autofunction:: spatialmeta.model.ConditionalVAESTSM.fit
+.. autofunction:: spatialmeta.model.ConditionalVAESTSM.get_latent_embedding
+.. autofunction:: spatialmeta.model.ConditionalVAESTSM.get_normalized_expression
+.. autofunction:: spatialmeta.model.ConditionalVAESTSM.get_modality_contribution
 
 Integration Model for SM Only
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 This class is designed to handle spatial metabolomics (SM) data. The model learn a shared latent space to predict spatial sub-clusters characterized by unique metabolic states.
 
 .. autofunction:: spatialmeta.model.ConditionalVAESM
@@ -64,7 +79,7 @@ This class is designed to handle spatial metabolomics (SM) data. The model learn
 
 
 Plotting
-----------
+--------
 .. autofunction:: spatialmeta.pl.make_colormap
 .. autofunction:: spatialmeta.pl.create_fig
 .. autofunction:: spatialmeta.pl.create_subplots

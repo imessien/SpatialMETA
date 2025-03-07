@@ -1,1 +1,1 @@
-rm -rf build; /opt/anaconda3/envs/spatialtk/bin/sphinx-build source build  
+rm -rf build; ~/miniconda3/envs/spatialtk/bin/sphinx-build source build

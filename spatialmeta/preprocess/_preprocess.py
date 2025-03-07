@@ -6,7 +6,7 @@ import time
 import random
 import os
 from typing import List, NamedTuple, Optional, TYPE_CHECKING, Union, Tuple
-
+import scipy
 # Third-party
 import numpy as np
 import pandas as pd
@@ -15,6 +15,7 @@ from anndata import AnnData
 import pyimzml
 from pyimzml.ImzMLParser import ImzMLParser
 import intervaltree
+import einops
 from sklearn.neighbors import NearestNeighbors
 from scipy import sparse
 from shapely.geometry import Point
@@ -27,6 +28,7 @@ from statsmodels.stats.multitest import multipletests
 from collections import defaultdict
 from scipy.stats import hypergeom
 from pathlib import Path
+from sklearn.preprocessing import MaxAbsScaler
 
 
 # Local
@@ -444,6 +446,37 @@ def new_spot_sample(
     new_dot_in_df = new_dot_df[new_dot_df.in_intersection]
     return new_dot_in_df
 
+def ST_spot_sample(
+    adata_ST: AnnDataST,
+    spatial_key_ST: str = "spatial",
+) -> pd.DataFrame:
+    """
+    Sample the ST spots.
+    
+    :param adata_ST: AnnDataST. The AnnData object with ST data.
+    :param spatial_key_ST: str. The spatial key for ST data, default is "spatial".
+    
+    :return: pd.DataFrame. The ST spots.
+    """
+    ST_coord = pd.DataFrame(adata_ST.obsm[spatial_key_ST])
+    ST_coord.columns = ["x_coord", "y_coord"]
+    return ST_coord
+
+def SM_spot_sample(
+    adata_SM: AnnDataSM,
+    spatial_key_SM: str = "spatial",
+) -> pd.DataFrame:
+    """
+    Sample the SM spots.
+    
+    :param adata_SM: AnnDataSM. The AnnData object with SM data.
+    :param spatial_key_SM: str. The spatial key for SM data, default is "spatial".
+    
+    :return: pd.DataFrame. The SM spots.
+    """
+    SM_coord = pd.DataFrame(adata_SM.obsm[spatial_key_SM])
+    SM_coord.columns = ["x_coord", "y_coord"]
+    return SM_coord
 
 @ignore_warning(level="ignore")
 def spot_align_byknn(
@@ -580,7 +613,6 @@ def spot_align_byknn(
     adata_ST_new.obs["y_coord"] = adata_ST_new.obs["y_coord"].astype(int)
     return adata_SM_new, adata_ST_new
 
-
 def joint_adata_sm_st(
     adata_SM_new: AnnDataSM, 
     adata_ST_new: AnnDataST
@@ -649,6 +681,80 @@ def normalize_total_joint_adata_sm_st(
         joint_adata_ST = joint_adata[:, joint_adata.var.type == "ST"]
         sc.pp.normalize_total(joint_adata_ST, target_sum=target_sum_ST)
         joint_adata_ST.X = joint_adata_ST.X.astype(joint_adata.X.dtype)
+
+def scale_joint_adata_sm_st(
+    joint_adata: AnnDataJointSMST,
+    scale_range_SM: Optional[Tuple[float, float]] = (0, 10),
+    scale_range_ST: Optional[Tuple[float, float]] = (0, 10),
+):
+    """
+    Scale the SM and ST data in the joint AnnData object.
+    
+    :param joint_adata: AnnDataJointSMST. The joint AnnData object with SM and ST data.
+    :param scale_range_SM: Optional[Tuple[float, float]]. The scale range for SM data, default is (0, 10).
+    :param scale_range_ST: Optional[Tuple[float, float]]. The scale range for ST data, default is (0, 10).
+    """
+    if scale_range_SM is not None:
+        joint_adata_SM = joint_adata[:, joint_adata.var.type == "SM"]
+        sc.pp.scale(joint_adata_SM, zero_center=False, max_value=scale_range_SM[1])
+        joint_adata.X[:, joint_adata.var.type == "SM"] = joint_adata_SM.X
+    if scale_range_ST is not None:
+        joint_adata_ST = joint_adata[:, joint_adata.var.type == "ST"]
+        sc.pp.scale(joint_adata_ST, zero_center=False, max_value=scale_range_ST[1])
+        joint_adata_ST.X = joint_adata_ST.X.astype(joint_adata.X.dtype)
+        
+def maxabsscale_joint_adata_sm_st(
+    joint_adata: AnnDataJointSMST,
+    scale_range_SM: Optional[Tuple[float, float]] = (0, 10),
+    scale_range_ST: Optional[Tuple[float, float]] = (0, 10),
+    global_scale: bool = False
+):
+    """
+    Scale the SM and ST data in the joint AnnData object.
+    
+    :param joint_adata: AnnDataJointSMST. The joint AnnData object with SM and ST data.
+    :param scale_range_SM: Optional[Tuple[float, float]]. The scale range for SM data, default is (0, 10).
+    :param scale_range_ST: Optional[Tuple[float, float]]. The scale range for ST data, default is (0, 10).
+    """
+    if global_scale:
+        if scale_range_SM is not None:
+            joint_adata_SM = joint_adata[:, joint_adata.var.type == "SM"].copy()
+            b, c = joint_adata_SM.X.shape
+            if scipy.sparse.issparse(joint_adata_SM.X) or isinstance(joint_adata_SM.X, anndata._core.views.SparseCSRView):
+                joint_adata_SM.X = joint_adata_SM.X.toarray()
+            joint_adata_SM.X = einops.rearrange(
+                (MaxAbsScaler().fit_transform(
+                    einops.rearrange(joint_adata_SM.X, 'b c -> (b c)')[None,:]
+                ) * scale_range_SM[1]).flatten(),
+                '(b c) -> b c',
+                b=b,
+                c=c
+            )
+            joint_adata.X[:, joint_adata.var.type == "SM"] = joint_adata_SM.X
+        if scale_range_ST is not None:
+            joint_adata_ST = joint_adata[:, joint_adata.var.type == "ST"].copy()
+            b, c = joint_adata_ST.X.shape
+            if scipy.sparse.issparse(joint_adata_ST.X) or isinstance(joint_adata_ST.X, anndata._core.views.SparseCSRView):
+                joint_adata_ST.X = joint_adata_ST.X.toarray()
+            joint_adata_ST.X = einops.rearrange(
+                (MaxAbsScaler().fit_transform(
+                    einops.rearrange(joint_adata_ST.X, 'b c -> (b c)')[None,:]
+                ) * scale_range_ST[1]).flatten(),
+                '(b c) -> b c',
+                b=b,
+                c=c
+            )
+            joint_adata.X[:, joint_adata.var.type == "ST"] = joint_adata_ST.X
+    else:
+        if scale_range_SM is not None:
+            joint_adata_SM = joint_adata[:, joint_adata.var.type == "SM"]
+            joint_adata_SM.X = MaxAbsScaler().fit_transform(joint_adata_SM.X) * scale_range_SM[1]
+            joint_adata.X[:, joint_adata.var.type == "SM"] = joint_adata_SM.X
+        if scale_range_ST is not None:
+            joint_adata_ST = joint_adata[:, joint_adata.var.type == "ST"]
+            joint_adata_ST.X = MaxAbsScaler().fit_transform(joint_adata_ST.X) * scale_range_SM[1]
+            joint_adata_ST.X = joint_adata_ST.X.astype(joint_adata.X.dtype)
+        
 
 
 def compute_batch_variable_genes_core(

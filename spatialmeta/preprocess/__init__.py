@@ -5,6 +5,8 @@ from ._preprocess import (
     spot_transform_by_manual,
     calculate_scale_factor,
     new_spot_sample,
+    ST_spot_sample,
+    SM_spot_sample,
     spot_align_byknn,
     joint_adata_sm_st,
     normalize_total_joint_adata_sm_st,
@@ -18,7 +20,9 @@ from ._preprocess import (
     spatial_distance_cluster,
     calculate_dot_df,
     merge_and_assign_var_data,
-    calculate_metabolite_enrichment
+    calculate_metabolite_enrichment,
+    scale_joint_adata_sm_st,
+    maxabsscale_joint_adata_sm_st
 )
 from ._simple import (
     filter_cells_sm,

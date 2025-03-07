@@ -58,12 +58,12 @@ class ConditionalVAE(nn.Module):
     :param encode_libsize: Boolean indicating whether to encode library size information, default is False.
     :param batch_hidden_dim: Integer specifying the dimensionality of the batch hidden layer, default is 8.
     :param reconstruction_method_st: Literal['mse', 'zg', 'zinb'] specifying the reconstruction method for the spatial data, default is 'zinb'. mse is mean squared error, zg is zero-inflated Gaussian, and zinb is zero-inflated negative binomial.
-    :param reconstruction_method_sm: Literal['mse', 'zg','g'] specifying the reconstruction method for the single-cell multi-omics data, default is 'g'. mse is mean squared error, zg is zero-inflated Gaussian, and g is Gaussian.
+    :param reconstruction_method_sm: Literal['mse', 'zg', 'g'] specifying the reconstruction method for the single-cell multi-omics data, default is 'g'. mse is mean squared error, zg is zero-inflated Gaussian, and g is Gaussian.
     
     """
     def __init__(
         self,
-        adata: AnnData,
+        adata: AnnDataJointSMST,
         hidden_stacks: List[int] = [128], 
         batch_keys: Optional[List[str]] = None,
         n_latent: int = 10,
@@ -77,7 +77,7 @@ class ConditionalVAE(nn.Module):
         encode_libsize: bool = False,
         batch_hidden_dim: int = 8,
         reconstruction_method_st: Literal['mse', 'zg', 'zinb'] = 'zinb',
-        reconstruction_method_sm: Literal['mse', 'zg','g'] = 'g'
+        reconstruction_method_sm: Literal['mse', 'zg', 'g'] = 'g'
     ):
         super(ConditionalVAE, self).__init__()
 
@@ -90,6 +90,9 @@ class ConditionalVAE(nn.Module):
         self.reconstruction_method_st = reconstruction_method_st
         self.reconstruction_method_sm = reconstruction_method_sm
         self.encode_libsize = encode_libsize
+        
+        self.batch_hidden_dim = batch_hidden_dim
+        self.batch_embedding = batch_embedding
         
         self.batch_keys = [batch_keys] if isinstance(batch_keys, str) else batch_keys
 
@@ -136,6 +139,8 @@ class ConditionalVAE(nn.Module):
         # The latent cell representation z ~ Logisticnormal(0, I)
         self.z_mean_fc = nn.Linear(self.n_hidden*2, self.n_latent)
         self.z_var_fc = nn.Linear(self.n_hidden*2, self.n_latent)
+        self.z_mean_fc_single = nn.Linear(self.n_hidden, self.n_latent)
+        self.z_var_fc_single = nn.Linear(self.n_hidden, self.n_latent)
 
         self.px_rna_rate_decoder = nn.Linear(
             self.n_hidden, 
@@ -156,6 +161,11 @@ class ConditionalVAE(nn.Module):
             self.n_hidden, 
             self.in_dim_SM
         )
+        
+        #self.px_sm_scale_decoder = nn.Sequential(
+        #    nn.Linear(self.n_hidden, self.in_dim_SM),
+        #    nn.ReLU()
+        #)
         
         self.px_sm_scale_decoder = nn.Linear(self.n_hidden, self.in_dim_SM)
         
@@ -394,7 +404,7 @@ class ConditionalVAE(nn.Module):
             """
             if mode == 'single':
                 kwargs['kl_weight'] = 2.
-                kwargs['n_epochs_kl_warmup'] = 400
+                kwargs['n_epochs_kl_warmup'] = 35
 
             elif mode == 'multi':
                 kwargs['kl_weight'] = 15.
@@ -413,7 +423,7 @@ class ConditionalVAE(nn.Module):
             kl_weight: float = 2.,
             reconstruction_st_weight: float = 1.,
             reconstruction_sm_weight: float = 1.,
-            n_epochs_kl_warmup: Union[int, None] = 400,
+            n_epochs_kl_warmup: Union[int, None] = 0,
             optimizer_parameters: Iterable = None,
             weight_decay: float = 1e-6,
             lr: bool = 5e-5,
@@ -493,7 +503,7 @@ class ConditionalVAE(nn.Module):
                 
                 reconstruction_loss_st = reconstruction_st_weight * L['reconstruction_loss_st']
                 reconstruction_loss_sm = reconstruction_sm_weight * L['reconstruction_loss_sm']
-                kldiv_loss = kl_weight * L['kldiv_loss']    
+                kldiv_loss = L['kldiv_loss']    
 
                 #loss = 1*reconstruction_loss_sm.mean() + 0.5*reconstruction_loss_st.mean() + kldiv_loss.mean()
 
@@ -503,7 +513,7 @@ class ConditionalVAE(nn.Module):
                     avg_kldiv_loss = kldiv_loss.mean()  / n_per_batch
                 elif kl_loss_reduction == 'sum':
                     avg_kldiv_loss = kldiv_loss.sum()  / n_per_batch
-                loss = avg_reconstruction_loss_sm + avg_reconstruction_loss_st + avg_kldiv_loss
+                loss = avg_reconstruction_loss_sm + avg_reconstruction_loss_st + (avg_kldiv_loss * kl_weight)
 
                 epoch_reconstruction_loss_sm += avg_reconstruction_loss_sm.item()
                 epoch_reconstruction_loss_st += avg_reconstruction_loss_st.item()
@@ -864,6 +874,15 @@ class ConditionalVAESM(nn.Module):
         q_var = H["q_var"]
         mean = torch.zeros_like(q_mu)
         scale = torch.ones_like(q_var)
+        if batch_index is not None:
+            mmd_loss = LossFunction.mmd_loss(
+                        z = H['q_mu'],
+                        cat = batch_index.detach().cpu().numpy(),
+                        dim=1,
+                    )
+        else:
+            mmd_loss = torch.tensor(0.0, device=self.device)
+        
         kldiv_loss = kld(Normal(q_mu, q_var.sqrt()),
                          Normal(mean, scale)).sum(dim = 1)
         
@@ -902,6 +921,7 @@ class ConditionalVAESM(nn.Module):
         loss_record = {
             "reconstruction_loss": reconstruction_loss,
             "kldiv_loss": kldiv_loss,
+            "mmd_loss": mmd_loss
         }
         return H, R, loss_record
     
@@ -917,6 +937,7 @@ class ConditionalVAESM(nn.Module):
             lr: bool = 5e-5,
             random_seed: int = 12,
             kl_loss_reduction: str = 'mean',
+            mmd_weight: float = 1.,
         ):
         """
         Fits the model.
@@ -950,10 +971,12 @@ class ConditionalVAESM(nn.Module):
         loss_record = {
             "reconstruction_loss": 0,
             "kldiv_loss": 0,
+            "mmd_loss": 0
         }
         epoch_reconstruction_loss_list = []
         epoch_kldiv_loss_list = []
         epoch_total_loss_list = []
+        epoch_mmd_loss_list = []
         
         epoch_sm_gate_logits_list = []
         
@@ -963,7 +986,7 @@ class ConditionalVAESM(nn.Module):
             epoch_total_loss = 0
             epoch_reconstruction_loss = 0
             epoch_kldiv_loss = 0
-            
+            epoch_mmd_loss = 0
             epoch_sm_gate_logits = []
             
             X_train = self.as_dataloader(
@@ -1000,22 +1023,28 @@ class ConditionalVAESM(nn.Module):
                     R['px_sm_dropout'].detach().cpu().numpy()
                 )
                 
-                reconstruction_loss = reconstruction_weight * L['reconstruction_loss']
-                kldiv_loss = kl_weight * L['kldiv_loss']    
-
+                reconstruction_loss =  L['reconstruction_loss']
+                kldiv_loss = L['kldiv_loss']
+                mmd_loss = L['mmd_loss']
                 #loss = reconstruction_loss.mean() + kldiv_loss.mean()
 
                 avg_reconstruction_loss = reconstruction_loss.mean()  / n_per_batch
+                avg_mmd_loss = mmd_loss.mean()  / n_per_batch
+                
                 if kl_loss_reduction == 'mean':
                     avg_kldiv_loss = kldiv_loss.mean()  / n_per_batch
                 elif kl_loss_reduction == 'sum':
                     avg_kldiv_loss = kldiv_loss.sum()  / n_per_batch
-                avg_kldiv_loss = kldiv_loss.mean()  / n_per_batch
-                loss = avg_reconstruction_loss + avg_kldiv_loss
+                    
+                
+                loss = (avg_reconstruction_loss)*reconstruction_weight + \
+                (avg_kldiv_loss * kl_weight) + \
+                (avg_mmd_loss * mmd_weight)
 
                 epoch_reconstruction_loss += avg_reconstruction_loss.item()
                 epoch_kldiv_loss += avg_kldiv_loss.item()
                 epoch_total_loss += loss.item()
+                epoch_mmd_loss += avg_mmd_loss.item()
                 
                 optimizer.zero_grad()
                 loss.backward()
@@ -1025,6 +1054,7 @@ class ConditionalVAESM(nn.Module):
                 'reconst': '{:.2e}'.format(epoch_reconstruction_loss),
                 'kldiv': '{:.2e}'.format(epoch_kldiv_loss),
                 'total_loss': '{:.2e}'.format(epoch_total_loss),
+                'mmd_loss': '{:.2e}'.format(epoch_mmd_loss)
             })
             
             pbar.update(1)
@@ -1033,6 +1063,7 @@ class ConditionalVAESM(nn.Module):
             epoch_total_loss_list.append(epoch_total_loss)
             epoch_sm_gate_logits = np.vstack(epoch_sm_gate_logits)
             epoch_sm_gate_logits_list.append(epoch_sm_gate_logits)
+            epoch_mmd_loss_list.append(epoch_mmd_loss)
             
             if n_epochs_kl_warmup:
                     kl_weight = min( kl_weight + kl_warmup_gradient, kl_weight_max)
@@ -1045,7 +1076,8 @@ class ConditionalVAESM(nn.Module):
             epoch_reconstruction_loss_list=epoch_reconstruction_loss_list,
             epoch_kldiv_loss_list=epoch_kldiv_loss_list,
             epoch_sm_gate_logits_list=epoch_sm_gate_logits_list,
-            epoch_total_loss_list=epoch_total_loss_list
+            epoch_total_loss_list=epoch_total_loss_list,
+            epoch_mmd_loss_list=epoch_mmd_loss_list
         )
         
     @torch.no_grad()

@@ -15,6 +15,7 @@ if not within_flit():  # see function docstring on why this is there
     from . import data as data
     from . import external as ext
 
+    from .util._classes import AnnDataSM, AnnDataST, AnnDataJointSMST
 
     from anndata import AnnData, concat
     from anndata import (

@@ -1,2 +1,3 @@
-from ._model import ConditionalVAE,ConditionalVAESM
-from ._alignment_model import AlignmentVAE
+from ._model import ConditionalVAESM
+from ._alignment_module import AlignmentModule
+from ._moe import ConditionalVAESTSM

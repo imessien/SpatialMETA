@@ -251,6 +251,7 @@ def plot_markerfeature(
     marker_feature_list: list,
     figsize: tuple = (10, 4),
     logfoldchanges_max: int = 10,
+    logfoldchanges_min: int = -2,
     uns_key: str = "rank_genes_groups",
     save_path: str = None,
 ):
@@ -263,6 +264,7 @@ def plot_markerfeature(
     :param marker_feature_list: list of marker features to highlight.
     :param figsize: tuple specifying the size of the figure, default is (10, 4).
     :param logfoldchanges_max: maximum logfoldchanges value to consider, default is 10.
+    :param logfoldchanges_min: minimum logfoldchanges value to consider, default is -2.
     :param uns_key: key in adata.uns where the data is stored, default is 'rank_genes_groups'.
     :param save_path: path to save the figure, default is None.
 
@@ -315,6 +317,7 @@ def plot_markerfeature(
     _data = result[
         (result["logfoldchanges"] > 0)
         & (np.abs(result["logfoldchanges"]) < logfoldchanges_max)
+        & (result["logfoldchanges"] > logfoldchanges_min)
         & (
             (np.abs(result["logfoldchanges"]) < 0.25)
             | (np.abs(result["pvals_adj"]) <= 2)
@@ -337,7 +340,8 @@ def plot_markerfeature(
     # Positive logfoldchanges, moderate absolute logfoldchanges, high pvals_adj
     _data = result[
         (result["logfoldchanges"] > 0)
-        & (np.abs(result["logfoldchanges"]) < logfoldchanges_max)
+        & (result["logfoldchanges"] < logfoldchanges_max)
+        & (result["logfoldchanges"] > logfoldchanges_min)
         & (np.abs(result["logfoldchanges"]) >= 0.25)
         & (np.abs(result["pvals_adj"]) > 2)
     ]
@@ -355,10 +359,12 @@ def plot_markerfeature(
             zorder=-1,
             legend=False,
         )
+        
     # Negative logfoldchanges, low absolute logfoldchanges, low pvals_adj
     _data = result[
         (result["logfoldchanges"] < 0)
-        & (np.abs(result["logfoldchanges"]) < logfoldchanges_max)
+        & (result["logfoldchanges"] < logfoldchanges_max)
+        & (result["logfoldchanges"] > logfoldchanges_min)
         & (
             (np.abs(result["logfoldchanges"]) < 0.25)
             | (np.abs(result["pvals_adj"]) <= 2)
@@ -387,7 +393,7 @@ def plot_markerfeature(
     )
     all_text = []
 
-    # Loop through each subtype and gene list
+    # Loop through each subtype and gene list and logfc is small logfoldchanges_max
     for e, (logfc_arr, name_arr, pval_arr, gene_list) in enumerate(
         zip(
             pd.DataFrame(adata.uns[uns_key]["logfoldchanges"]).to_numpy().T,
@@ -403,43 +409,44 @@ def plot_markerfeature(
         # Loop through each gene name and its corresponding data
         for _, (logfc, gene, pval) in enumerate(zip(logfc_arr, name_arr, pval_arr)):
             # Check if the gene is in the list for the current subtype
-            if gene in gene_list:
-                # Find the coordinates in the result DataFrame
-                coords = result.loc[
-                    (result[groupby].cat.codes == e) & (result["gene_name"] == gene),
-                    groupby + "_codes",
-                ].iloc[0]
-                x, y = coords, logfc
-                # Add a scatter point
+            if np.abs(logfc) < logfoldchanges_max:
+                if gene in gene_list:
+                    # Find the coordinates in the result DataFrame
+                    coords = result.loc[
+                        (result[groupby].cat.codes == e) & (result["gene_name"] == gene),
+                        groupby + "_codes",
+                    ].iloc[0]
+                    x, y = coords, logfc
+                    # Add a scatter point
 
-                c_ls = list(np.unique(_data[groupby]))
-                ax.scatter(
-                    x,
-                    y,
-                    lw=0.3,
-                    edgecolor="black",
-                    c=palette[c_ls[e]],
-                    s=group_frac_dict[c_ls[e]][gene] * 12,
-                )
-
-                # Annotate the gene name
-                all_text.append(
-                    ax.annotate(
-                        xy=(x, y),
-                        text=gene,
-                        size=8,
-                        xytext=(1, 40),
-                        textcoords="offset points",
-                        ha="center",
-                        arrowprops=dict(
-                            arrowstyle="-",
-                            mutation_scale=0.005,
-                            color="black",
-                            lw=0.5,
-                            ls="-",
-                        ),
+                    c_ls = list(np.unique(_data[groupby]))
+                    ax.scatter(
+                        x,
+                        y,
+                        lw=0.3,
+                        edgecolor="black",
+                        c=palette[c_ls[e]],
+                        s=group_frac_dict[c_ls[e]][gene] * 12,
                     )
-                )
+
+                    # Annotate the gene name
+                    all_text.append(
+                        ax.annotate(
+                            xy=(x, y),
+                            text=gene,
+                            size=8,
+                            xytext=(1, 40),
+                            textcoords="offset points",
+                            ha="center",
+                            arrowprops=dict(
+                                arrowstyle="-",
+                                mutation_scale=0.005,
+                                color="black",
+                                lw=0.5,
+                                ls="-",
+                            ),
+                        )
+                    )
     # Modify the x-axis tick labels to show the group names
     x_tick_positions = range(len(c_ls))
     # Set the x-tick positions and labels explicitly
@@ -452,9 +459,8 @@ def plot_markerfeature(
     if save_path:
         fig.savefig(save_path)
 
-
 def plot_marker_gene_metabolite(
-    adata: AnnDataJointSMST,
+    adata,
     groupby: str,
     palette: dict,
     ST_marker_feature_list: list,
@@ -661,44 +667,45 @@ def plot_marker_gene_metabolite(
         # Loop through each gene name and its corresponding data
         for _, (logfc, gene, pval) in enumerate(zip(logfc_arr, name_arr, pval_arr)):
             # Check if the gene is in the list for the current subtype
-            if gene in gene_list:
-                # Find the coordinates in the result DataFrame
-                coords = result_ST.loc[
-                    (result_ST[groupby].cat.codes == e)
-                    & (result_ST["gene_name"] == gene),
-                    groupby + "_codes",
-                ].iloc[0]
-                x, y = coords, logfc
-                # Add a scatter point
+            if np.abs(logfc) < logfoldchanges_max_ST:
+                if gene in gene_list:
+                    # Find the coordinates in the result DataFrame
+                    coords = result_ST.loc[
+                        (result_ST[groupby].cat.codes == e)
+                        & (result_ST["gene_name"] == gene),
+                        groupby + "_codes",
+                    ].iloc[0]
+                    x, y = coords, logfc
+                    # Add a scatter point
 
-                c_ls = list(np.unique(_data[groupby]))
-                ax.scatter(
-                    x,
-                    y,
-                    lw=0.3,
-                    edgecolor="black",
-                    c=palette[c_ls[e]],
-                    s=group_frac_dict[c_ls[e]][gene] * 12,
-                )
-
-                # Annotate the gene name
-                all_text.append(
-                    ax.annotate(
-                        xy=(x, y),
-                        text=gene,
-                        size=8,
-                        xytext=(1, 40),
-                        textcoords="offset points",
-                        ha="center",
-                        arrowprops=dict(
-                            arrowstyle="-",
-                            mutation_scale=0.005,
-                            color="black",
-                            lw=0.5,
-                            ls="-",
-                        ),
+                    c_ls = list(np.unique(_data[groupby]))
+                    ax.scatter(
+                        x,
+                        y,
+                        lw=0.3,
+                        edgecolor="black",
+                        c=palette[c_ls[e]],
+                        s=group_frac_dict[c_ls[e]][gene] * 12,
                     )
-                )
+
+                    # Annotate the gene name
+                    all_text.append(
+                        ax.annotate(
+                            xy=(x, y),
+                            text=gene,
+                            size=8,
+                            xytext=(1, 40),
+                            textcoords="offset points",
+                            ha="center",
+                            arrowprops=dict(
+                                arrowstyle="-",
+                                mutation_scale=0.005,
+                                color="black",
+                                lw=0.5,
+                                ls="-",
+                            ),
+                        )
+                    )
     # Loop through each subtype and metabolite list
     for e, (logfc_arr, name_arr, pval_arr, gene_list) in enumerate(
         zip(
@@ -716,38 +723,39 @@ def plot_marker_gene_metabolite(
         for _, (logfc, metabolite, pval) in enumerate(
             zip(logfc_arr, name_arr, pval_arr)
         ):
-            if metabolite in gene_list:
-                coords = result_SM.loc[
-                    (result_SM[groupby].cat.codes == e)
-                    & (result_SM["metabolite_name"] == metabolite),
-                    groupby + "_codes",
-                ].iloc[0]
-                x, y = coords, logfc
-                ax.scatter(
-                    x,
-                    -y,
-                    lw=0.3,
-                    edgecolor="black",
-                    c=palette[c_ls[e]],
-                    s=group_frac_dict[c_ls[e]][metabolite] * 12,
-                )
-                all_text.append(
-                    ax.annotate(
-                        xy=(x, -y),
-                        text=metabolite,
-                        size=8,
-                        xytext=(1, -40),
-                        textcoords="offset points",
-                        ha="center",
-                        arrowprops=dict(
-                            arrowstyle="-",
-                            mutation_scale=0.005,
-                            color="black",
-                            lw=0.5,
-                            ls="-",
-                        ),
+            if np.abs(logfc) < logfoldchanges_max_SM:
+                if metabolite in gene_list:
+                    coords = result_SM.loc[
+                        (result_SM[groupby].cat.codes == e)
+                        & (result_SM["metabolite_name"] == metabolite),
+                        groupby + "_codes",
+                    ].iloc[0]
+                    x, y = coords, logfc
+                    ax.scatter(
+                        x,
+                        -y,
+                        lw=0.3,
+                        edgecolor="black",
+                        c=palette[c_ls[e]],
+                        s=group_frac_dict[c_ls[e]][metabolite] * 12,
                     )
-                )
+                    all_text.append(
+                        ax.annotate(
+                            xy=(x, -y),
+                            text=metabolite,
+                            size=8,
+                            xytext=(1, -40),
+                            textcoords="offset points",
+                            ha="center",
+                            arrowprops=dict(
+                                arrowstyle="-",
+                                mutation_scale=0.005,
+                                color="black",
+                                lw=0.5,
+                                ls="-",
+                            ),
+                        )
+                    )
     # Modify the y-axis tick labels to show absolute values
     ax.set_yticklabels(
         [
