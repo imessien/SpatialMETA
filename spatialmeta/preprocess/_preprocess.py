@@ -486,6 +486,7 @@ def spot_align_byknn(
     spatail_key_SM: str = "spatial",
     spatial_key_ST: str = "spatial",
     min_diam: int = 500,
+    n_neighbors: int=5,
     min_dist_fold: float = 1.5,
 ) -> Tuple[AnnDataSM, AnnDataST]:
     """
@@ -497,6 +498,7 @@ def spot_align_byknn(
     :param spatail_key_SM: str. The spatial key for SM data, default is "spatial".
     :param spatial_key_ST: str. The spatial key for ST data, default is "spatial".
     :param min_diam: int. The minimum distance of the spot, which is same as the min_diam in function 'new_spot_sample()', default is 500.
+    :param n_neighbors: int. The neighbors for KNN calculation, default is 5.
     :param min_dist_fold: float. The minimum distance fold, used to filter the nearest spots, defaults to 1.5. For example, if min_diam is 500 and min_dist_fold is 1.5, the minimum distance for filtering is 500 * 1.5 = 750. This filters out spots greater than this distance.
     
     :return: Tuple[AnnDataSM, AnnDataST]. The AnnData object with SM and ST data after reassignment.
@@ -508,8 +510,8 @@ def spot_align_byknn(
     new_dot_coords = new_dot_in_df[["x_coord", "y_coord"]].values
     adata_SM_coords = adata_SM.obsm[spatail_key_SM]
     adata_ST_coords = adata_ST.obsm[spatial_key_ST]
-    knn_SM = NearestNeighbors(n_neighbors=5, algorithm="auto")
-    knn_ST = NearestNeighbors(n_neighbors=5, algorithm="auto")
+    knn_SM = NearestNeighbors(n_neighbors=n_neighbors, algorithm="auto")
+    knn_ST = NearestNeighbors(n_neighbors=n_neighbors, algorithm="auto")
     knn_SM.fit(adata_SM_coords)
     knn_ST.fit(adata_ST_coords)
     _, indices_SM = knn_SM.kneighbors(new_dot_coords)
