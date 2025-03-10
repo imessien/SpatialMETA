@@ -27,7 +27,7 @@ from ._preprocess import (
 from ._simple import (
     filter_cells_sm,
     filter_metabolites_sm,
-    calculate_min_diam,
+    calculate_min_dist,
     calculate_qc_metrics_sm,
     add_obs_to_adata,
     add_hvf_to_jointadata,

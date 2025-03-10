@@ -485,9 +485,9 @@ def spot_align_byknn(
     adata_ST: AnnData,
     spatail_key_SM: str = "spatial",
     spatial_key_ST: str = "spatial",
-    min_diam: int = 500,
+    min_dist: int = 500,
     n_neighbors: int=5,
-    min_dist_fold: float = 1.5,
+    dist_fold: float = 1.5,
 ) -> Tuple[AnnDataSM, AnnDataST]:
     """
     Reassignment the new spots to the SM and ST data by KNN.
@@ -497,14 +497,14 @@ def spot_align_byknn(
     :param adata_ST: AnnDataST. The AnnData object with ST data.
     :param spatail_key_SM: str. The spatial key for SM data, default is "spatial".
     :param spatial_key_ST: str. The spatial key for ST data, default is "spatial".
-    :param min_diam: int. The minimum distance of the spot, which is same as the min_diam in function 'new_spot_sample()', default is 500.
+    :param min_dist: int. The minimum distance of the spot, which is same as the min_dist in function 'new_spot_sample()', default is 500.
     :param n_neighbors: int. The neighbors for KNN calculation, default is 5.
-    :param min_dist_fold: float. The minimum distance fold, used to filter the nearest spots, defaults to 1.5. For example, if min_diam is 500 and min_dist_fold is 1.5, the minimum distance for filtering is 500 * 1.5 = 750. This filters out spots greater than this distance.
+    :param dist_fold: float. The minimum distance fold, used to filter the nearest spots, defaults to 1.5. For example, if min_dist is 500 and dist_fold is 1.5, the minimum distance for filtering is 500 * 1.5 = 750. This filters out spots greater than this distance.
     
     :return: Tuple[AnnDataSM, AnnDataST]. The AnnData object with SM and ST data after reassignment.
     """
     
-    min_dist = min_diam * min_dist_fold
+    min_dist = min_dist * dist_fold
     new_dot_in_df["spot_name"] = "spot_" + new_dot_in_df.reset_index().index.astype(str)
     new_dot_in_df.index = new_dot_in_df.reset_index().index
     new_dot_coords = new_dot_in_df[["x_coord", "y_coord"]].values

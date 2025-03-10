@@ -79,12 +79,12 @@ def filter_metabolites_sm(adata_SM:AnnData,
     adata_SM_filtered = adata_SM[:,overlap]
     return adata_SM_filtered
 
-def calculate_min_diam(
+def calculate_min_dist(
     adata: AnnData,
     spatial_key: str = 'spatial',
 ) -> float:
     """
-    Calculate the minimum distance between spots.
+    Calculate the minimum inter-spot distance.
     
     :param adata: AnnData. The AnnData object.
     :param spatial_key: str, the key of spatial data in adata.obsm, default 'spatial'.
