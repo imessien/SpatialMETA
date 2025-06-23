@@ -17,6 +17,7 @@ import numpy as np
 
 from anndata import AnnData
 from scipy.sparse import issparse
+import scipy.sparse
 
 from copy import deepcopy
 import json
@@ -176,66 +177,41 @@ class ConditionalVAE(nn.Module):
         
         self.to(self.device)
         
-    def as_dataloader(self, batch_size: int = 32, shuffle: bool = True) -> DataLoader:
-        return DataLoader(
-            self._indices,
-            batch_size=batch_size,
-            shuffle=shuffle,
-        )   
+    def as_dataloader(self, batch_size=32, shuffle=True):
+        index_dataset = torch.utils.data.TensorDataset(
+            torch.tensor(self._indices, dtype=torch.long)
+        )
+        return DataLoader(index_dataset, batch_size=batch_size, shuffle=shuffle) 
         
     def initialize_dataset(self):
         X = self.adata.X
-        self._type=np.array(list(self.adata.var.type.values))
-        self.in_dim_SM = X[:,self._type=="SM"].shape[1]
-        self.in_dim_ST = X[:,self._type=="ST"].shape[1]
-        self._n_record = X.shape[0]
-        self._indices = np.array(list(range(self._n_record)))
-        
-        self.n_batch_keys = None 
-        self.batch_categories = None 
-        self.batch_category_summary = None 
-        
-        if self.batch_keys is not None:
-            for e,i in enumerate(self.batch_keys):
-                if i not in self.adata.obs.columns:
-                    raise ValueError(f"batch_key {i} is not found in AnnData obs")
-                
-            self.n_batch_keys = [
-                len(np.unique(self.adata.obs[x]))
-                for x in self.batch_keys
-            ]
-            
-            self.batch_categories = [
-                pd.Categorical(self.adata.obs[x])
-                for x in self.batch_keys
-            ]
-        
-            self.batch_category_summary = [
-                dict(Counter(x)) for x in self.batch_categories
-            ]
-        
-            for i in range(len(self.batch_category_summary)):
-                for k in self.batch_categories[i].categories:
-                    if k not in self.batch_category_summary[i].keys():
-                        self.batch_category_summary[i][k] = 0
-                        
-            batch_categories = [np.array(x.codes) for x in self.batch_categories]
-            
-            _dataset = list(zip(X, *batch_categories))
-            
+        if scipy.sparse.issparse(X):
+            self.X = X
         else:
-            _dataset = list(X)
-            
-            
-        _shuffle_indices = list(range(len(_dataset)))
-        np.random.shuffle(_shuffle_indices)
-        self._dataset = np.array([_dataset[i] for i in _shuffle_indices])
-        self._shuffle_indices = np.array(
-            [x for x, _ in sorted(zip(range(len(_dataset)), _shuffle_indices), key=lambda x: x[1])]
-        )
+            self.X = np.array(X)
+        self._type = np.array(self.adata.var['type'].values)
+        self.in_dim_SM = np.sum(self._type == "SM")
+        self.in_dim_ST = np.sum(self._type == "ST")
+        self._n_record = self.X.shape[0]
+        self._indices = np.arange(self._n_record)
 
-        self._shuffled_indices_inverse = _shuffle_indices
+        if self.batch_keys is not None:
+            for key in self.batch_keys:
+                if key not in self.adata.obs.columns:
+                    raise ValueError(f"batch_key '{key}' not found in AnnData.obs")
+            self.batch_categories = [
+                pd.Categorical(self.adata.obs[key]) for key in self.batch_keys
+            ]
+            self.batch_codes = [
+                np.array(cat.codes, dtype=np.int64) for cat in self.batch_categories
+            ]
+            self.n_batch_keys = [len(cat.categories) for cat in self.batch_categories]
+        else:
+            self.batch_categories = None
+            self.batch_codes = None
+            self.n_batch_keys = None
 
+       
     def encode(
         self, 
         X: torch.Tensor,
@@ -415,241 +391,7 @@ class ConditionalVAE(nn.Module):
                 n_per_batch=n_per_batch,
                 **kwargs
             )
-            
-    def fit_core(self,
-            max_epoch:int = 35, 
-            n_per_batch:int = 128,
-            reconstruction_reduction: str = 'sum',
-            kl_weight: float = 2.,
-            reconstruction_st_weight: float = 1.,
-            reconstruction_sm_weight: float = 1.,
-            n_epochs_kl_warmup: Union[int, None] = 0,
-            optimizer_parameters: Iterable = None,
-            weight_decay: float = 1e-6,
-            lr: bool = 5e-5,
-            random_seed: int = 12,
-            kl_loss_reduction: str = 'mean',
-        ):
-        self.train()
-        if n_epochs_kl_warmup:
-            n_epochs_kl_warmup = min(max_epoch, n_epochs_kl_warmup)
-            kl_warmup_gradient = kl_weight / n_epochs_kl_warmup
-            kl_weight_max = kl_weight
-            kl_weight = 0.
-            
-        if optimizer_parameters is None:
-            optimizer = optim.AdamW(self.parameters(), lr, weight_decay=weight_decay)
-        else:
-            optimizer = optim.AdamW(optimizer_parameters, lr, weight_decay=weight_decay)        
-        pbar = get_tqdm()(range(max_epoch), desc="Epoch", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-        loss_record = {
-            "reconstruction_loss_sm": 0,
-            "reconstruction_loss_st": 0,
-            "kldiv_loss": 0,
-        }
-        epoch_reconstruction_loss_st_list = []
-        epoch_reconstruction_loss_sm_list = []
-        epoch_kldiv_loss_list = []
-        epoch_total_loss_list = []
-        
-        epoch_sm_gate_logits_list = []
-        
-        for epoch in range(1, max_epoch+1):
-            self._trained = True
-            pbar.desc = "Epoch {}".format(epoch)
-            epoch_total_loss = 0
-            epoch_reconstruction_loss_sm = 0
-            epoch_reconstruction_loss_st = 0 
-            epoch_kldiv_loss = 0
-            
-            epoch_sm_gate_logits = []
-            
-            X_train = self.as_dataloader(
-                batch_size=n_per_batch, 
-                shuffle=True
-            )   
-            for b, X in enumerate(X_train):
-                
-                batch_data = self._dataset[X.cpu().numpy()]
-                X = get_k_elements(batch_data, 0)
-                batch_index = None 
-                if self.batch_keys is not None:
-                    batch_index = get_last_k_elements(
-                        batch_data, 1
-                    )
-                    batch_index = list(np.vstack(batch_index).T.astype(float))
-                    for i in range(len(batch_index)):
-                        batch_index[i] = torch.tensor(batch_index[i])
-                        if not isinstance(batch_index[i], torch.FloatTensor):
-                            batch_index[i] = batch_index[i].type(torch.FloatTensor)
-                            
-                        batch_index[i] = batch_index[i].to(self.device).unsqueeze(1)
                         
-                    batch_index = torch.hstack(batch_index)
-                
-                 
-                X = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-                X = X.to(self.device)
-                
-                H, R, L = self.forward(
-                    X,
-                    batch_index=batch_index,
-                    reduction=reconstruction_reduction,
-                )
-                
-                epoch_sm_gate_logits.append(
-                    R['px_sm_dropout'].detach().cpu().numpy()
-                )
-                
-                reconstruction_loss_st = reconstruction_st_weight * L['reconstruction_loss_st']
-                reconstruction_loss_sm = reconstruction_sm_weight * L['reconstruction_loss_sm']
-                kldiv_loss = L['kldiv_loss']    
-
-                #loss = 1*reconstruction_loss_sm.mean() + 0.5*reconstruction_loss_st.mean() + kldiv_loss.mean()
-
-                avg_reconstruction_loss_st = reconstruction_loss_st.mean()  / n_per_batch
-                avg_reconstruction_loss_sm = reconstruction_loss_sm.mean()  / n_per_batch
-                if kl_loss_reduction == 'mean':
-                    avg_kldiv_loss = kldiv_loss.mean()  / n_per_batch
-                elif kl_loss_reduction == 'sum':
-                    avg_kldiv_loss = kldiv_loss.sum()  / n_per_batch
-                loss = avg_reconstruction_loss_sm + avg_reconstruction_loss_st + (avg_kldiv_loss * kl_weight)
-
-                epoch_reconstruction_loss_sm += avg_reconstruction_loss_sm.item()
-                epoch_reconstruction_loss_st += avg_reconstruction_loss_st.item()
-                
-                epoch_kldiv_loss += avg_kldiv_loss.item()
-                
-                epoch_total_loss += loss.item()
-                
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                
-            pbar.set_postfix({
-                'reconst_sm': '{:.2e}'.format(epoch_reconstruction_loss_sm),
-                'reconst_st': '{:.2e}'.format(epoch_reconstruction_loss_st),                  
-                'kldiv': '{:.2e}'.format(epoch_kldiv_loss),
-                'total_loss': '{:.2e}'.format(epoch_total_loss),
-            }) 
-            
-            pbar.update(1)        
-            epoch_reconstruction_loss_sm_list.append(epoch_reconstruction_loss_sm)
-            epoch_reconstruction_loss_st_list.append(epoch_reconstruction_loss_st)
-            epoch_kldiv_loss_list.append(epoch_kldiv_loss)
-            epoch_total_loss_list.append(epoch_total_loss)
-            epoch_sm_gate_logits = np.vstack(epoch_sm_gate_logits)
-            epoch_sm_gate_logits_list.append(epoch_sm_gate_logits)
-            
-            if n_epochs_kl_warmup:
-                    kl_weight = min( kl_weight + kl_warmup_gradient, kl_weight_max)
-            random_seed += 1
-                 
-        pbar.close()
-        self.trained_state_dict = deepcopy(self.state_dict())  
-          
-        return dict(  
-            epoch_reconstruction_loss_st_list=epoch_reconstruction_loss_st_list,
-            epoch_reconstruction_loss_sm_list=epoch_reconstruction_loss_sm_list,
-            epoch_kldiv_loss_list=epoch_kldiv_loss_list,
-            epoch_sm_gate_logits_list=epoch_sm_gate_logits_list,
-            epoch_total_loss_list=epoch_total_loss_list
-        )
-
-    @torch.no_grad()
-    def get_latent_embedding(
-        self, 
-        latent_key: Literal["z", "q_mu"] = "q_mu", 
-        n_per_batch: int = 128,
-        show_progress: bool = True
-    ) -> np.ndarray:
-        """
-        Get the latent embedding of the data.
-        
-        :param latent_key: String specifying the key of the latent variable to return, default is "q_mu".
-        :param n_per_batch: Integer specifying the number of samples per batch, default is 128.
-        :param show_progress: Boolean indicating whether to show the progress bar, default is True.
-        
-        :return: Numpy array containing the latent embedding.
-        """
-        self.eval()
-        X = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
-        Zs = []
-        if show_progress:
-            pbar = get_tqdm()(X, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-        for x in X:
-            batch_data = self._dataset[x.cpu().numpy()]
-            X = get_k_elements(batch_data, 0)
-            x = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-            if not isinstance(x, torch.FloatTensor):
-                x = x.type(torch.FloatTensor)
-            x = x.to(self.device)     
-            H = self.encode(x)
-            Zs.append(H[latent_key].detach().cpu().numpy())
-            if show_progress:
-                pbar.update(1)
-        if show_progress:
-            pbar.close()
-        return np.vstack(Zs)[self._shuffle_indices]
-    
-    @torch.no_grad()
-    def get_normalized_expression(
-        self, 
-        latent_key: Literal["z", "q_mu"] = "q_mu", 
-        n_per_batch: int = 128,
-        show_progress: bool = True
-    ) -> np.ndarray:
-        """
-        Get the normalized expression of the data.
-        
-        :param latent_key: String specifying the key of the latent variable to return, default is "q_mu".
-        :param n_per_batch: Integer specifying the number of samples per batch, default is 128.
-        :param show_progress: Boolean indicating whether to show the progress bar, default is True.
-        
-        :return: Numpy array containing the normalized expression.
-        """
-        self.eval()
-        X = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
-        Zs = []
-        if show_progress:
-            pbar = get_tqdm()(X, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-        
-        for x in X:
-            batch_data = self._dataset[x.cpu().numpy()]
-            X = get_k_elements(batch_data, 0)
-            x = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-            batch_index = None
-            if self.batch_keys is not None:
-                batch_index = get_last_k_elements(
-                    batch_data, 1
-                )
-                batch_index = list(np.vstack(batch_index).T.astype(float))
-                for i in range(len(batch_index)):
-                    batch_index[i] = torch.tensor(batch_index[i])
-                    if not isinstance(batch_index[i], torch.FloatTensor):
-                        batch_index[i] = batch_index[i].type(torch.FloatTensor)
-                    batch_index[i] = batch_index[i].to(self.device).unsqueeze(1)
-                batch_index = torch.hstack(batch_index)
-            if not isinstance(x, torch.FloatTensor):
-                x = x.type(torch.FloatTensor)
-            x = x.to(self.device)
-            
-            x_ST = x[:,self._type=="ST"]
-                    
-            H,R,_ = self.forward(x, batch_index=batch_index)
-            
-            Zs.append(
-                np.hstack([
-                    R['px_sm_scale'].detach().cpu().numpy(),
-                    R['px_rna_scale'].detach().cpu().numpy()
-                ])
-            )
-            if show_progress:
-                pbar.update(1)
-        if show_progress:
-            pbar.close()
-        return np.vstack(Zs)[self._shuffle_indices]
-
 class ConditionalVAESM(nn.Module):
     """
     This class implements a Conditional Variational Autoencoder (CVAE) for vertical integration SM.
@@ -753,64 +495,38 @@ class ConditionalVAESM(nn.Module):
         
         self.to(self.device)
     
-    def as_dataloader(self, batch_size: int = 32, shuffle: bool = True) -> DataLoader:
-        return DataLoader(
-            self._indices,
-            batch_size=batch_size,
-            shuffle=shuffle,
+    def as_dataloader(self, batch_size=32, shuffle=True):
+        index_dataset = torch.utils.data.TensorDataset(
+            torch.tensor(self._indices, dtype=torch.long)
         )
+        return DataLoader(index_dataset, batch_size=batch_size, shuffle=shuffle)
         
     def initialize_dataset(self):
         X = self.adata.X
-        self._type=np.array(list(self.adata.var.type.values))
-        self.in_dim = X.shape[1]
-        self._n_record = X.shape[0]
-        self._indices = np.array(list(range(self._n_record)))
-        
-        self.n_batch_keys = None 
-        self.batch_categories = None 
-        self.batch_category_summary = None 
-        
-        if self.batch_keys is not None:
-            for e,i in enumerate(self.batch_keys):
-                if i not in self.adata.obs.columns:
-                    raise ValueError(f"batch_key {i} is not found in AnnData obs")
-                
-            self.n_batch_keys = [
-                len(np.unique(self.adata.obs[x]))
-                for x in self.batch_keys
-            ]
-            
-            self.batch_categories = [
-                pd.Categorical(self.adata.obs[x])
-                for x in self.batch_keys
-            ]
-        
-            self.batch_category_summary = [
-                dict(Counter(x)) for x in self.batch_categories
-            ]
-        
-            for i in range(len(self.batch_category_summary)):
-                for k in self.batch_categories[i].categories:
-                    if k not in self.batch_category_summary[i].keys():
-                        self.batch_category_summary[i][k] = 0
-                        
-            batch_categories = [np.array(x.codes) for x in self.batch_categories]
-            
-            _dataset = list(zip(X, *batch_categories))
-            
+        if scipy.sparse.issparse(X):
+            self.X = X
         else:
-            _dataset = list(X)
-            
-            
-        _shuffle_indices = list(range(len(_dataset)))
-        np.random.shuffle(_shuffle_indices)
-        self._dataset = np.array([_dataset[i] for i in _shuffle_indices])
-        self._shuffle_indices = np.array(
-            [x for x, _ in sorted(zip(range(len(_dataset)), _shuffle_indices), key=lambda x: x[1])]
-        )
+            self.X = np.array(X)
+        self._type = np.array(self.adata.var['type'].values)
+        self.in_dim = np.sum(self._type == "SM")
+        self._n_record = self.X.shape[0]
+        self._indices = np.arange(self._n_record)
 
-        self._shuffled_indices_inverse = _shuffle_indices 
+        if self.batch_keys is not None:
+            for key in self.batch_keys:
+                if key not in self.adata.obs.columns:
+                    raise ValueError(f"batch_key '{key}' not found in AnnData.obs")
+            self.batch_categories = [
+                pd.Categorical(self.adata.obs[key]) for key in self.batch_keys
+            ]
+            self.batch_codes = [
+                np.array(cat.codes, dtype=np.int64) for cat in self.batch_categories
+            ]
+            self.n_batch_keys = [len(cat.categories) for cat in self.batch_categories]
+        else:
+            self.batch_categories = None
+            self.batch_codes = None
+            self.n_batch_keys = None
         
     def encode(
         self, 
@@ -993,28 +709,27 @@ class ConditionalVAESM(nn.Module):
                 batch_size=n_per_batch, 
                 shuffle=True
             )
-            for b, X in enumerate(X_train):
-                
-                batch_data = self._dataset[X.cpu().numpy()]
-                X = get_k_elements(batch_data, 0)
-                batch_index = None 
-                if self.batch_keys is not None:
-                    batch_index = get_last_k_elements(
-                        batch_data, 1
-                    )
-                    batch_index = list(np.vstack(batch_index).T.astype(float))
-                    for i in range(len(batch_index)):
-                        batch_index[i] = torch.tensor(batch_index[i])
-                        if not isinstance(batch_index[i], torch.FloatTensor):
-                            batch_index[i] = batch_index[i].type(torch.FloatTensor)
-                        batch_index[i] = batch_index[i].to(self.device).unsqueeze(1)
+            for batch_idx in X_train:
+                indices = batch_idx[0].cpu().numpy()
+                X_batch = []
+                for idx in indices:
+                    if scipy.sparse.issparse(self.X):
+                        x_row = self.X.getrow(idx).toarray().squeeze()
+                    else:
+                        x_row = self.X[idx]
+                    X_batch.append(x_row)
+                X_batch = torch.tensor(np.stack(X_batch), dtype=torch.float32).to(self.device)
+                if self.batch_codes is not None:
+                    batch_index = [
+                        torch.tensor(code[indices], dtype=torch.long).unsqueeze(1).to(self.device)
+                        for code in self.batch_codes
+                    ]
                     batch_index = torch.hstack(batch_index)
-                
-                X = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-                X = X.to(self.device)
+                else:
+                    batch_index = None
                 
                 H, R, L = self.forward(
-                    X,
+                    X_batch,
                     batch_index=batch_index,
                     reduction=reconstruction_reduction,
                 )
@@ -1097,69 +812,89 @@ class ConditionalVAESM(nn.Module):
         :return: Numpy array containing the latent embedding.
         """
         self.eval()
-        X = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
+        dataloader = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
         Zs = []
         if show_progress:
-            pbar = get_tqdm()(X, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-        for x in X:
-            batch_data = self._dataset[x.cpu().numpy()]
-            X = get_k_elements(batch_data, 0)
-            x = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-            if not isinstance(x, torch.FloatTensor):
-                x = x.type(torch.FloatTensor)
-            x = x.to(self.device)     
-            H = self.encode(x)
+            pbar = get_tqdm()(dataloader, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+        for batch_idx in dataloader:
+            indices = batch_idx[0].cpu().numpy()
+            # Read batch from adata.X
+            X_batch = []
+            for idx in indices:
+                if scipy.sparse.issparse(self.adata.X):
+                    x_row = self.adata.X.getrow(idx).toarray().squeeze()
+                else:
+                    x_row = self.adata.X[idx]
+                X_batch.append(x_row)
+            X_batch = torch.tensor(np.stack(X_batch), dtype=torch.float32).to(self.device)
+
+            # Handle batch codes if applicable
+            if self.batch_codes is not None:
+                batch_index = [
+                    torch.tensor(code[indices], dtype=torch.long).unsqueeze(1).to(self.device)
+                    for code in self.batch_codes
+                ]
+                batch_index = torch.hstack(batch_index)
+            else:
+                batch_index = None
+                
+            H = self.encode(X_batch)
             Zs.append(H[latent_key].detach().cpu().numpy())
             if show_progress:
                 pbar.update(1)
         if show_progress:
             pbar.close()
-        return np.vstack(Zs)[self._shuffle_indices]
+        if hasattr(self, '_shuffle_indices'):
+            # If shuffle indices are set, use them to reorder the results
+            Zs = np.vstack(Zs)[self._shuffle_indices]
+        return Zs
     
     @torch.no_grad()
     def get_normalized_expression(
-        self, 
-        latent_key: Literal["z", "q_mu"] = "q_mu", 
+        self,
+        latent_key: Literal["z", "q_mu"] = "q_mu",
         n_per_batch: int = 128,
         show_progress: bool = True
     ) -> np.ndarray:
         """
         Get the normalized expression of the data.
-        
+
         :param latent_key: String specifying the key of the latent variable to return, default is "q_mu".
         :param n_per_batch: Integer specifying the number of samples per batch, default is 128.
         :param show_progress: Boolean indicating whether to show the progress bar, default is True.
-        
+
         :return: Numpy array containing the normalized expression.
         """
         self.eval()
-        X = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
+        dataloader = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
         Zs = []
         if show_progress:
-            pbar = get_tqdm()(X, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-        
-        for x in X:
-            batch_data = self._dataset[x.cpu().numpy()]
-            X = get_k_elements(batch_data, 0)
-            x = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-            batch_index = None
-            if self.batch_keys is not None:
-                batch_index = get_last_k_elements(
-                    batch_data, 1
-                )
-                batch_index = list(np.vstack(batch_index).T.astype(float))
-                for i in range(len(batch_index)):
-                    batch_index[i] = torch.tensor(batch_index[i])
-                    if not isinstance(batch_index[i], torch.FloatTensor):
-                        batch_index[i] = batch_index[i].type(torch.FloatTensor)
-                    batch_index[i] = batch_index[i].to(self.device).unsqueeze(1)
+            pbar = get_tqdm()(dataloader, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+
+        for batch in dataloader:
+            indices = batch[0].cpu().numpy()
+            # Read batch from adata.X
+            X_batch = []
+            for idx in indices:
+                if scipy.sparse.issparse(self.adata.X):
+                    x_row = self.adata.X.getrow(idx).toarray().squeeze()
+                else:
+                    x_row = self.adata.X[idx]
+                X_batch.append(x_row)
+            X_batch = torch.tensor(np.stack(X_batch), dtype=torch.float32).to(self.device)
+
+            # Handle batch codes if applicable
+            if self.batch_codes is not None:
+                batch_index = [
+                    torch.tensor(code[indices], dtype=torch.long).unsqueeze(1).to(self.device)
+                    for code in self.batch_codes
+                ]
                 batch_index = torch.hstack(batch_index)
-            if not isinstance(x, torch.FloatTensor):
-                x = x.type(torch.FloatTensor)
-            x = x.to(self.device)
-            
-            H,R,_ = self.forward(x, batch_index=batch_index)
-            
+            else:
+                batch_index = None
+
+            H,R,_ = self.forward(X_batch, batch_index=batch_index)
+
             Zs.append(
                 np.hstack([
                     R['px_sm_scale'].detach().cpu().numpy()
@@ -1169,6 +904,8 @@ class ConditionalVAESM(nn.Module):
                 pbar.update(1)
         if show_progress:
             pbar.close()
-        return np.vstack(Zs)[self._shuffle_indices]
- 
-    
+        Zs = np.vstack(Zs)
+        if hasattr(self, '_shuffle_indices'):
+            # If shuffle indices are set, use them to reorder the results
+            Zs = Zs[self._shuffle_indices]
+        return Zs

@@ -10,6 +10,7 @@ from torch.distributions import kl_divergence as kld
 # Third Party
 import numpy as np
 import scanpy as sc
+import scipy
 
 # Built-in
 from anndata import AnnData
@@ -480,31 +481,27 @@ class ConditionalVAESTSM(ConditionalVAE):
                 batch_size=n_per_batch, 
                 shuffle=True
             )   
-            for b, X in enumerate(X_train):
-                
-                batch_data = self._dataset[X.cpu().numpy()]
-                X = get_k_elements(batch_data, 0)
-                batch_index = None 
-                if self.batch_keys is not None:
-                    batch_index = get_last_k_elements(
-                        batch_data, 1
-                    )
-                    batch_index = list(np.vstack(batch_index).T.astype(float))
-                    for i in range(len(batch_index)):
-                        batch_index[i] = torch.tensor(batch_index[i])
-                        if not isinstance(batch_index[i], torch.FloatTensor):
-                            batch_index[i] = batch_index[i].type(torch.FloatTensor)
-                            
-                        batch_index[i] = batch_index[i].to(self.device).unsqueeze(1)
-                        
+            for batch_idx in X_train:
+                indices = batch_idx[0].cpu().numpy()
+                X_batch = []
+                for idx in indices:
+                    if scipy.sparse.issparse(self.X):
+                        x_row = self.X.getrow(idx).toarray().squeeze()
+                    else:
+                        x_row = self.X[idx]
+                    X_batch.append(x_row)
+                X_batch = torch.tensor(np.stack(X_batch), dtype=torch.float32).to(self.device)
+                if self.batch_codes is not None:
+                    batch_index = [
+                        torch.tensor(code[indices], dtype=torch.long).unsqueeze(1).to(self.device)
+                        for code in self.batch_codes
+                    ]
                     batch_index = torch.hstack(batch_index)
-                
-                 
-                X = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-                X = X.to(self.device)
+                else:
+                    batch_index = None
                 
                 H, Rs, L = self.forward(
-                    X,
+                    X_batch,
                     batch_index=batch_index,
                     reduction=reconstruction_reduction,
                 )
@@ -631,20 +628,34 @@ class ConditionalVAESTSM(ConditionalVAE):
         :return: Numpy array containing the latent embedding.
         """
         self.eval()
-        X = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
+        dataloader = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
         Zs = []
         Zs_st = []
         Zs_sm = []
         if show_progress:
-            pbar = get_tqdm()(X, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-        for x in X:
-            batch_data = self._dataset[x.cpu().numpy()]
-            X = get_k_elements(batch_data, 0)
-            x = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-            if not isinstance(x, torch.FloatTensor):
-                x = x.type(torch.FloatTensor)
-            x = x.to(self.device)     
-            H = self.encode(x)
+            pbar = get_tqdm()(dataloader, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+        for batch_idx in dataloader:
+            indices = batch_idx[0].cpu().numpy()    
+            # from X obtain the batch data
+            X_batch = []
+            for idx in indices:
+                if scipy.sparse.issparse(self.X):
+                    x_row = self.X.getrow(idx).toarray().squeeze()
+                else:
+                    x_row = self.X[idx]
+                X_batch.append(x_row)
+            X_batch = torch.tensor(np.stack(X_batch), dtype=torch.float32).to(self.device)
+
+            # deal with batch codes
+            if self.batch_codes is not None:
+                batch_index = [
+                    torch.tensor(code[indices], dtype=torch.long).unsqueeze(1).to(self.device)
+                    for code in self.batch_codes
+                ]
+                batch_index = torch.hstack(batch_index)
+            else:
+                batch_index = None      
+            H = self.encode(X_batch)
             Zs.append(H[latent_key].detach().cpu().numpy())
             Zs_st.append(H['st'][latent_key].detach().cpu().numpy())
             Zs_sm.append(H['sm'][latent_key].detach().cpu().numpy())
@@ -652,7 +663,7 @@ class ConditionalVAESTSM(ConditionalVAE):
                 pbar.update(1)
         if show_progress:
             pbar.close()
-        return np.vstack(Zs)[self._shuffle_indices]#, np.vstack(Zs_st)[self._shuffle_indices], np.vstack(Zs_sm)[self._shuffle_indices]
+        return np.vstack(Zs)#, np.vstack(Zs_st)[self._shuffle_indices], np.vstack(Zs_sm)[self._shuffle_indices]
 
     @torch.no_grad()
     def _get_latent_embedding(
@@ -671,20 +682,34 @@ class ConditionalVAESTSM(ConditionalVAE):
         :return: Numpy array containing the latent embedding.
         """
         self.eval()
-        X = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
+        dataloader = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
         Zs = []
         Zs_st = []
         Zs_sm = []
         if show_progress:
-            pbar = get_tqdm()(X, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-        for x in X:
-            batch_data = self._dataset[x.cpu().numpy()]
-            X = get_k_elements(batch_data, 0)
-            x = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-            if not isinstance(x, torch.FloatTensor):
-                x = x.type(torch.FloatTensor)
-            x = x.to(self.device)     
-            H = self.encode(x)
+            pbar = get_tqdm()(dataloader, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+        for batch_idx in dataloader:
+            indices = batch_idx[0].cpu().numpy()    
+            # from X obtain the batch data
+            X_batch = []
+            for idx in indices:
+                if scipy.sparse.issparse(self.adata.X):
+                    x_row = self.adata.X.getrow(idx).toarray().squeeze()
+                else:
+                    x_row = self.adata.X[idx]
+                X_batch.append(x_row)
+            X_batch = torch.tensor(np.stack(X_batch), dtype=torch.float32).to(self.device)
+
+            # deal with batch codes
+            if self.batch_codes is not None:
+                batch_index = [
+                    torch.tensor(code[indices], dtype=torch.long).unsqueeze(1).to(self.device)
+                    for code in self.batch_codes
+                ]
+                batch_index = torch.hstack(batch_index)
+            else:
+                batch_index = None      
+            H = self.encode(X_batch)
             Zs.append(H[latent_key].detach().cpu().numpy())
             Zs_st.append(H['st'][latent_key].detach().cpu().numpy())
             Zs_sm.append(H['sm'][latent_key].detach().cpu().numpy())
@@ -692,7 +717,14 @@ class ConditionalVAESTSM(ConditionalVAE):
                 pbar.update(1)
         if show_progress:
             pbar.close()
-        return np.vstack(Zs)[self._shuffle_indices], np.vstack(Zs_st)[self._shuffle_indices], np.vstack(Zs_sm)[self._shuffle_indices]
+        Zs_all = np.vstack(Zs)
+        Zs_st_all = np.vstack(Zs_st)
+        Zs_sm_all = np.vstack(Zs_sm)
+        if hasattr(self, '_shuffle_indices'):
+            Zs_all = Zs_all[self._shuffle_indices]
+            Zs_st_all = Zs_st_all[self._shuffle_indices]
+            Zs_sm_all = Zs_sm_all[self._shuffle_indices]
+        return Zs_all, Zs_st_all, Zs_sm_all
   
     @torch.no_grad()
     def get_normalized_expression(
@@ -711,36 +743,36 @@ class ConditionalVAESTSM(ConditionalVAE):
         :return: Numpy array containing the normalized expression.
         """
         self.eval()
-        X = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
+        dataloader = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
         Zs = []
         Zs_rate = []
         Zs_dropout = []
         if show_progress:
-            pbar = get_tqdm()(X, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-        
-        for x in X:
-            batch_data = self._dataset[x.cpu().numpy()]
-            X = get_k_elements(batch_data, 0)
-            x = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-            batch_index = None
-            if self.batch_keys is not None:
-                batch_index = get_last_k_elements(
-                    batch_data, 1
-                )
-                batch_index = list(np.vstack(batch_index).T.astype(float))
-                for i in range(len(batch_index)):
-                    batch_index[i] = torch.tensor(batch_index[i])
-                    if not isinstance(batch_index[i], torch.FloatTensor):
-                        batch_index[i] = batch_index[i].type(torch.FloatTensor)
-                    batch_index[i] = batch_index[i].to(self.device).unsqueeze(1)
+            pbar = get_tqdm()(dataloader, desc="Normalized Expression", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+
+        for batch_idx in dataloader:
+            indices = batch_idx[0].cpu().numpy()
+            # Read batch from adata.X
+            X_batch = []
+            for idx in indices:
+                if scipy.sparse.issparse(self.adata.X):
+                    x_row = self.adata.X.getrow(idx).toarray().squeeze()
+                else:
+                    x_row = self.adata.X[idx]
+                X_batch.append(x_row)
+            X_batch = torch.tensor(np.stack(X_batch), dtype=torch.float32).to(self.device)
+
+            # Handle batch codes if applicable
+            if self.batch_codes is not None:
+                batch_index = [
+                    torch.tensor(code[indices], dtype=torch.long).unsqueeze(1).to(self.device)
+                    for code in self.batch_codes
+                ]
                 batch_index = torch.hstack(batch_index)
-            if not isinstance(x, torch.FloatTensor):
-                x = x.type(torch.FloatTensor)
-            x = x.to(self.device)
-            
-            x_ST = x[:,self._type=="ST"]
+            else:
+                batch_index = None
                     
-            H,Rs,_ = self.forward(x, batch_index=batch_index)
+            H,Rs,_ = self.forward(X_batch, batch_index=batch_index)
             Zs.append(
                 np.hstack([
                     Rs['latent']['px_sm_scale'].detach().cpu().numpy(),
@@ -763,7 +795,14 @@ class ConditionalVAESTSM(ConditionalVAE):
                 pbar.update(1)
         if show_progress:
             pbar.close()
-        return np.vstack(Zs)[self._shuffle_indices]#, np.vstack(Zs_rate)[self._shuffle_indices], np.vstack(Zs_dropout)[self._shuffle_indices]
+        Zs_all = np.vstack(Zs)
+        Zs_rate_all = np.vstack(Zs_rate)
+        Zs_dropout_all = np.vstack(Zs_dropout)
+        if hasattr(self, '_shuffle_indices'):
+            Zs_all = Zs_all[self._shuffle_indices]
+            Zs_rate_all = Zs_rate_all[self._shuffle_indices]
+            Zs_dropout_all = Zs_dropout_all[self._shuffle_indices]
+        return Zs_all#, Zs_rate_all, Zs_dropout_all
 
     @torch.no_grad()
     def get_normalized_expression_corr(
@@ -782,36 +821,36 @@ class ConditionalVAESTSM(ConditionalVAE):
         :return: Numpy array containing the normalized expression.
         """
         self.eval()
-        X = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
+        dataloader = self.as_dataloader(batch_size=n_per_batch, shuffle=False)
         Zs = []
         Zs_rate = []
         Zs_dropout = []
         if show_progress:
-            pbar = get_tqdm()(X, desc="Latent Embedding", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+            pbar = get_tqdm()(dataloader, desc="Normalized Expression Corr", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
         
-        for x in X:
-            batch_data = self._dataset[x.cpu().numpy()]
-            X = get_k_elements(batch_data, 0)
-            x = torch.tensor(np.vstack(list(map(lambda x: x.toarray() if issparse(x) else x, X))))
-            batch_index = None
-            if self.batch_keys is not None:
-                batch_index = get_last_k_elements(
-                    batch_data, 1
-                )
-                batch_index = list(np.vstack(batch_index).T.astype(float))
-                for i in range(len(batch_index)):
-                    batch_index[i] = torch.tensor(batch_index[i])
-                    if not isinstance(batch_index[i], torch.FloatTensor):
-                        batch_index[i] = batch_index[i].type(torch.FloatTensor)
-                    batch_index[i] = batch_index[i].to(self.device).unsqueeze(1)
+        for batch in dataloader:
+            indices = batch[0].cpu().numpy()
+            # Read batch from adata.X
+            X_batch = []
+            for idx in indices:
+                if scipy.sparse.issparse(self.adata.X):
+                    x_row = self.adata.X.getrow(idx).toarray().squeeze()
+                else:
+                    x_row = self.adata.X[idx]
+                X_batch.append(x_row)
+            X_batch = torch.tensor(np.stack(X_batch), dtype=torch.float32).to(self.device)
+
+            # Handle batch codes if applicable
+            if self.batch_codes is not None:
+                batch_index = [
+                    torch.tensor(code[indices], dtype=torch.long).unsqueeze(1).to(self.device)
+                    for code in self.batch_codes
+                ]
                 batch_index = torch.hstack(batch_index)
-            if not isinstance(x, torch.FloatTensor):
-                x = x.type(torch.FloatTensor)
-            x = x.to(self.device)
-            
-            x_ST = x[:,self._type=="ST"]
+            else:
+                batch_index = None
                     
-            H,Rs,_ = self.forward(x, batch_index=batch_index)
+            H,Rs,_ = self.forward(X_batch, batch_index=batch_index)
             Zs.append(
                 np.hstack([
                     Rs['corr']['px_sm_scale'].detach().cpu().numpy(),
@@ -834,8 +873,16 @@ class ConditionalVAESTSM(ConditionalVAE):
                 pbar.update(1)
         if show_progress:
             pbar.close()
-        return np.vstack(Zs)[self._shuffle_indices], np.vstack(Zs_rate)[self._shuffle_indices], np.vstack(Zs_dropout)[self._shuffle_indices]
+        Zs_all = np.vstack(Zs)
+        Zs_rate_all = np.vstack(Zs_rate)
+        Zs_dropout_all = np.vstack(Zs_dropout)
+        if hasattr(self, '_shuffle_indices'):
+            Zs_all = Zs_all[self._shuffle_indices]
+            Zs_rate_all = Zs_rate_all[self._shuffle_indices]
+            Zs_dropout_all = Zs_dropout_all[self._shuffle_indices]
 
+        return Zs_all#, Zs_rate_all, Zs_dropout_all
+    
     def get_modality_contribution(
         self,
         latent_key: Literal["z", "q_mu"] = "q_mu",
