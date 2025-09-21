@@ -1,0 +1,132 @@
+Metadata-Version: 2.4
+Name: spatialmeta
+Version: 0.1.0
+Summary: spatialMETA: a deep learning framework for spatial multiomics
+Author-email: Ruonan Tian <ruonan.23@intl.zju.edu.cn>
+Maintainer-email: Ruonan Tian <ruonan.23@intl.zju.edu.cn>
+License-Expression: BSD-3-Clause
+Keywords: spatial,multiomics,deep learning,transcriptomics,metabolomics
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: adjusttext>=1.1.0
+Requires-Dist: anndata>=0.8.0
+Requires-Dist: biopython>=1.79
+Requires-Dist: colour>=0.1.5
+Requires-Dist: dash-bootstrap-components>=1.5.0
+Requires-Dist: dash-daq>=0.5.0
+Requires-Dist: einops>=0.4.1
+Requires-Dist: elasticdeform>=0.5.0
+Requires-Dist: intervaltree>=3.1.0
+Requires-Dist: kornia>=0.7.0
+Requires-Dist: leidenalg>=0.8.0
+Requires-Dist: matplotlib>=3.5.0
+Requires-Dist: molmass>=2020.0.0
+Requires-Dist: numba>=0.57.0
+Requires-Dist: numpy>=1.21.0
+Requires-Dist: pandas>=1.4.0
+Requires-Dist: plotly>=5.10.0
+Requires-Dist: pyimzml>=1.5.0
+Requires-Dist: python-dotplot>=0.0.1
+Requires-Dist: scanpy>=1.8.0
+Requires-Dist: scikit-learn>=1.0.0
+Requires-Dist: scipy>=1.10.0
+Requires-Dist: seaborn>=0.11.0
+Requires-Dist: shapely>=2.0.0
+Requires-Dist: svgpathtools>=1.6.0
+Requires-Dist: tifffile>=2020.0.0
+Requires-Dist: torch>=1.13.0
+Requires-Dist: torchvision>=0.14.0
+Requires-Dist: umap-learn>=0.5.0
+Provides-Extra: dev
+Requires-Dist: nbsphinx>=0.9.7; extra == "dev"
+Requires-Dist: sphinx-copybutton>=0.5.2; extra == "dev"
+Requires-Dist: sphinx-hoverxref>=1.4.2; extra == "dev"
+Requires-Dist: sphinx-rtd-theme>=3.0.2; extra == "dev"
+Requires-Dist: diffusers>=0.35.1; python_version >= "3.10" and extra == "dev"
+Requires-Dist: gradio>=5.46.1; python_version >= "3.10" and extra == "dev"
+Requires-Dist: transformers>=4.56.2; python_version >= "3.10" and extra == "dev"
+Requires-Dist: transformers>=4.21.0; python_version < "3.10" and extra == "dev"
+Provides-Extra: latest
+Requires-Dist: anndata>=0.12.2; python_version >= "3.11" and extra == "latest"
+Requires-Dist: scanpy>=1.11.4; python_version >= "3.11" and extra == "latest"
+Requires-Dist: pandas>=2.3.2; python_version >= "3.11" and extra == "latest"
+Requires-Dist: numpy>=2.3.3; python_version >= "3.11" and extra == "latest"
+Requires-Dist: scipy>=1.16.2; python_version >= "3.11" and extra == "latest"
+Requires-Dist: scikit-learn>=1.7.2; python_version >= "3.11" and extra == "latest"
+Requires-Dist: torch>=2.8.0; python_version >= "3.11" and extra == "latest"
+Requires-Dist: torchvision>=0.23.0; python_version >= "3.11" and extra == "latest"
+Requires-Dist: transformers>=4.56.2; python_version >= "3.11" and extra == "latest"
+Requires-Dist: diffusers>=0.35.1; python_version >= "3.11" and extra == "latest"
+Requires-Dist: gradio>=5.46.1; python_version >= "3.11" and extra == "latest"
+Requires-Dist: anndata>=0.8.0; python_version < "3.11" and extra == "latest"
+Requires-Dist: scanpy>=1.8.0; python_version < "3.11" and extra == "latest"
+Requires-Dist: pandas>=1.4.0; python_version < "3.11" and extra == "latest"
+Requires-Dist: numpy>=1.21.0; python_version < "3.11" and extra == "latest"
+Requires-Dist: scipy>=1.10.0; python_version < "3.11" and extra == "latest"
+Requires-Dist: scikit-learn>=1.0.0; python_version < "3.11" and extra == "latest"
+Requires-Dist: torch>=1.13.0; python_version < "3.11" and extra == "latest"
+Requires-Dist: torchvision>=0.14.0; python_version < "3.11" and extra == "latest"
+Provides-Extra: minimal
+Requires-Dist: anndata>=0.8.0; extra == "minimal"
+Requires-Dist: scanpy>=1.8.0; extra == "minimal"
+Requires-Dist: pandas>=1.4.0; extra == "minimal"
+Requires-Dist: numpy>=1.21.0; extra == "minimal"
+Requires-Dist: scipy>=1.10.0; extra == "minimal"
+Requires-Dist: matplotlib>=3.5.0; extra == "minimal"
+Requires-Dist: torch>=1.13.0; extra == "minimal"
+Requires-Dist: torchvision>=0.14.0; extra == "minimal"
+Dynamic: license-file
+
+# SpatialMETA
+
+spatialMETA is a method for integrating spatial multi-omics data. SMOI aligns ST and SM to a unified resolution, integrates single or multiple sample data to identify cross-modal spatial patterns, and offers extensive visualization and analysis functions.
+
+<img src="./docs/source/_static/imgs/spatialmeta_2025.png" />
+
+## Documentation
+
+[Documentation](https://spatialmeta.readthedocs.io/en/latest/)
+
+
+### Installing from source with uv (Recommended)
+```shell
+# For new projects - clone and install as dependency
+
+# For existing uv projects - add as dependency
+uv add git+https://github.com/imessien/SpatialMETA.git
+
+# For development - clone and install in editable mode
+git clone https://github.com/imessien/SpatialMETA.git
+cd SpatialMETA
+uv sync
+```
+
+### Installation Options for Different Use Cases
+
+#### Latest Versions (Recommended for new projects)
+```shell
+uv add git+https://github.com/imessien/SpatialMETA.git
+# With optional dependencies
+uv sync -e ".[latest]"
+uv sync -e ".[minimal]"
+uv sync -e ".[dev]"
+```
+
+## Change Log
+- 0.1.0 (2025-01-XX)
+  - Migrated to uv package manager for modern Python dependency management
+  - Updated all dependencies to latest versions (PyTorch 2.8.0+, Transformers 4.56.2+, etc.)
+  - Added transformers, diffusers, and gradio as optional dependencies
+  - Improved installation process with pyproject.toml
+- 0.0.2 (2025-03-06)
+  - Update `spatialmeta.model.AlignmentModule` 
+  - Update `spatialmeta.model.ConditionalVAESTSM`

@@ -5,14 +5,17 @@ description = "spatialMETA: a deep learning framework for spatial multiomics"
 authors = [
     {name = "Ruonan Tian", email = "ruonan.23@intl.zju.edu.cn"},
 ]
+maintainers = [
+    {name = "Ruonan Tian", email = "ruonan.23@intl.zju.edu.cn"},
+]
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "BSD-3-Clause"}
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 keywords = ["spatial", "multiomics", "deep learning", "transcriptomics", "metabolomics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -100,3 +103,7 @@ minimal = [
     "torch>=1.13.0",
     "torchvision>=0.14.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["spatialmeta*"]
+exclude = ["spatialmeta_tutorial*", "benchmark*", "docs*"]
