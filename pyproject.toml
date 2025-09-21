@@ -105,5 +105,10 @@ minimal = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["spatialmeta*"]
-exclude = ["spatialmeta_tutorial*", "benchmark*", "docs*"]
+include = ["spatialmeta*", "spatialmeta_tutorial*", "benchmark*", "docs*"]
+
+[tool.setuptools.package-data]
+spatialmeta = ["data/**/*", "**/*.txt", "**/*.csv", "**/*.json", "**/*.ipynb", "**/*.py", "**/*.md"]
+spatialmeta_tutorial = ["**/*"]
+benchmark = ["**/*"]
+docs = ["**/*"]
